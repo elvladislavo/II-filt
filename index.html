@@ -62,8 +62,12 @@ button[disabled]{opacity:.45;cursor:default}
 .preset[aria-pressed="true"] b{color:var(--accent)}
 .preset.feature{grid-column:1/-1;flex-direction:row;align-items:baseline;flex-wrap:wrap;column-gap:10px}
 .preset .yr{font-family:var(--mono);font-size:11px;color:var(--violet);margin-left:auto}
+.how{margin:10px 0 0;font-size:13px;color:var(--muted);max-width:62ch;border-left:2px solid var(--violet);padding-left:10px}
+.toggle{display:flex;align-items:center;gap:10px;font-size:14px;margin-top:8px;min-height:44px;cursor:pointer}
+.toggle input{width:20px;height:20px;accent-color:var(--accent);margin:0}
+.toggle small{color:var(--muted);font-size:12px}
 .sliders{display:grid;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
-.sl{display:grid;grid-template-columns:72px minmax(0,1fr) 36px;align-items:center;gap:10px}
+.sl{display:grid;grid-template-columns:84px minmax(0,1fr) 36px;align-items:center;gap:10px}
 .sl label{font-size:14px}
 .sl output{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
 input[type=range]{width:100%;accent-color:var(--accent);min-height:28px}
@@ -80,14 +84,14 @@ input[type=range]{width:100%;accent-color:var(--accent);min-height:28px}
 <div class="wrap">
   <header>
     <h1>Melt Cam <span>2022</span></h1>
-    <span class="tag">img2img · per-frame · no temporal memory</span>
+    <span class="tag">AI video looks · 2019 to 2023</span>
   </header>
 
   <div class="stage">
     <canvas id="gl" width="360" height="480" aria-label="Filtered video preview"></canvas>
     <div class="chip" id="srcChip"><span class="dot"></span><span id="srcName">Demo feed</span></div>
     <div class="chip rec" id="recChip" hidden><span class="dot"></span><span id="recTime">Rec 0:00</span></div>
-    <div class="readout"><span id="frameOut">frame 0000</span><span id="seedOut">seed 0000</span><span>360×480</span></div>
+    <div class="readout"><span id="frameOut">frame 0000</span><span id="seedOut">seed 0000</span><span id="resOut">360×480</span></div>
   </div>
 
   <div class="deck">
@@ -107,6 +111,8 @@ input[type=range]{width:100%;accent-color:var(--accent);min-height:28px}
     <section>
       <p class="label">Look</p>
       <div class="presets" id="presets"></div>
+      <p class="how" id="howNote"></p>
+      <label class="toggle" for="wm"><input type="checkbox" id="wm"><span>Stock watermark ghost <small>(Spaghetti and Diffusion)</small></span></label>
     </section>
 
     <section id="capSec" hidden>
@@ -127,10 +133,10 @@ input[type=range]{width:100%;accent-color:var(--accent);min-height:28px}
     </section>
 
     <section class="sliders" aria-label="Fine tuning">
-      <div class="sl"><label for="warp">Warp</label><input type="range" id="warp" min="0" max="100"><output for="warp" id="warpO"></output></div>
-      <div class="sl"><label for="flicker">Flicker</label><input type="range" id="flicker" min="0" max="100"><output for="flicker" id="flickerO"></output></div>
-      <div class="sl"><label for="trails">Trails</label><input type="range" id="trails" min="0" max="100"><output for="trails" id="trailsO"></output></div>
-      <div class="sl"><label for="detail">Detail</label><input type="range" id="detail" min="0" max="100"><output for="detail" id="detailO"></output></div>
+      <div class="sl"><label for="warp" id="warpL">Warp</label><input type="range" id="warp" min="0" max="100"><output for="warp" id="warpO"></output></div>
+      <div class="sl"><label for="flicker" id="flickerL">Flicker</label><input type="range" id="flicker" min="0" max="100"><output for="flicker" id="flickerO"></output></div>
+      <div class="sl"><label for="trails" id="trailsL">Trails</label><input type="range" id="trails" min="0" max="100"><output for="trails" id="trailsO"></output></div>
+      <div class="sl"><label for="detail" id="detailL">Detail</label><input type="range" id="detail" min="0" max="100"><output for="detail" id="detailO"></output></div>
     </section>
   </div>
 </div>
@@ -154,31 +160,65 @@ if(STANDALONE){$('camBtn').classList.add('primary');$('fileBtn').classList.remov
   note('Showing a demo feed. Camera access is limited inside Claude: use Film or pick a video to record a clip, or try Live camera.');
 }
 
+const DEF_LABELS=['Warp','Flicker','Trails','Detail'];
 const PRESETS=[
-  {id:'spaghetti',name:'Spaghetti',sub:'Choppy morphing face, extra features, noodle smear',yr:'2023 text-to-video',warp:70,flicker:55,trails:18,detail:35,zoom:0,hal:0,post:.5,soup:true},
+  {id:'gan',name:'GAN 2019',sub:'Tiny generator rebuilds every frame',yr:'2019 · GAN video',gan:true,warp:45,flicker:40,trails:35,detail:60,
+   labels:['Wobble','Jitter','Smoothing','Artifacts'],res:'gen 192×256',
+   how:'How it works: a 2019 GAN video model could only make tiny frames. Each camera frame is squeezed to 48×64, as if found in the model’s latent space, then rebuilt by the generator’s upsampling layers (48×64 → 96×128 → 192×256). Those layers leave checkerboard marks and invent texture at edges. New frames come 12 times a second.'},
+  {id:'diffusion',name:'Diffusion 2023',sub:'Encode, add noise, denoise, decode',yr:'2023 · latent diffusion',diff:true,warp:50,flicker:30,trails:45,detail:55,
+   labels:['Noise','Frame drift','Frame link','Decoder'],res:'latent 45×60',
+   how:'How it works: like 2023 text-to-video, each frame is shrunk 8× into a 45×60 latent, buried in random noise, cleaned up over 6 denoising steps, then decoded back to pixels. 8 new frames per second, blended in between. Frame link copies the previous frame (temporal attention); Frame drift gives each frame its own noise. The denoiser here is hand-made, not a trained model, so it guesses shapes from blur.'},
+  {id:'spaghetti',name:'Spaghetti',sub:'Morphing face, extra features, noodle smear',yr:'2023 · look imitation',soup:true,warp:70,flicker:55,trails:18,detail:35,res:'360×480',
+   how:'An imitation of how the famous 2023 clips looked, not a pipeline simulation: the face reshapes every frame, features double and the mouth area smears.'},
   {id:'melt',name:'Melt',sub:'Zooming dream trails',warp:60,flicker:30,trails:82,detail:55,zoom:1,hal:.35,post:.5},
   {id:'flicker',name:'Flicker',sub:'New style every frame',warp:28,flicker:92,trails:8,detail:72,zoom:0,hal:.2,post:.8},
   {id:'mush',name:'Mush',sub:'Blurry early text-to-video',warp:48,flicker:38,trails:55,detail:12,zoom:.3,hal:.1,post:.2},
   {id:'dream',name:'Dream',sub:'Hallucinated patterns',warp:80,flicker:50,trails:62,detail:60,zoom:.6,hal:1,post:.6}
 ];
+const EFFECT_HOW='A hand-tuned effect in the style of 2022 AI video, not a pipeline simulation.';
 let P=Object.assign({},PRESETS[0]);
 
-const VS='attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}';
-const FS_MAIN=`
+/* ---------- GL plumbing ---------- */
+const HDR=`
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 #else
 precision mediump float;
 #endif
-uniform sampler2D uSrc,uPrev;uniform vec2 uRes;uniform float uTime,uSeed,uWarp,uFlicker,uTrails,uDetail,uZoom,uHal,uPost,uSrcAspect,uMirror;
 float h1(float n){return fract(sin(n*127.1)*43758.5453);}
 float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
  return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}
 float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<4;i++){v+=a*noise(p);p=p*2.03+17.1;a*=.5;}return v;}
-vec2 cover(vec2 uv){float A=uRes.x/uRes.y;
- if(uSrcAspect>A)uv.x=(uv.x-.5)*A/uSrcAspect+.5;else uv.y=(uv.y-.5)*uSrcAspect/A+.5;
- if(uMirror>.5)uv.x=1.-uv.x;return uv;}
+vec2 coverUV(vec2 uv,float asp,float A,float mir){
+ if(asp>A)uv.x=(uv.x-.5)*A/asp+.5;else uv.y=(uv.y-.5)*asp/A+.5;
+ if(mir>.5)uv.x=1.-uv.x;return uv;}
+`;
+const VS='attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}';
+function sh(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))console.error(gl.getShaderInfoLog(s));return s;}
+function prog(fs){const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,VS));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,HDR+fs));
+  gl.bindAttribLocation(p,0,'a');gl.linkProgram(p);return p;}
+const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+function tex(){const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);return t;}
+function target(w,h){const t=tex();gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  const f=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
+  gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);gl.bindFramebuffer(gl.FRAMEBUFFER,null);return{t,f,w,h};}
+const LOC=new Map();
+function L(p,n){let m=LOC.get(p);if(!m){m={};LOC.set(p,m);}if(!(n in m))m[n]=gl.getUniformLocation(p,n);return m[n];}
+function run(p,dst,texs,u){
+  gl.bindFramebuffer(gl.FRAMEBUFFER,dst?dst.f:null);gl.viewport(0,0,dst?dst.w:W,dst?dst.h:H);gl.useProgram(p);
+  let unit=0;for(const k in texs){gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,texs[k]);gl.uniform1i(L(p,k),unit);unit++;}
+  for(const k in u){const v=u[k],l=L(p,k);if(Array.isArray(v))gl.uniform2f(l,v[0],v[1]);else gl.uniform1f(l,v);}
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);}
+
+/* ---------- effect looks (Melt, Flicker, Mush, Dream) ---------- */
+const pMain=prog(`
+uniform sampler2D uSrc,uPrev;uniform vec2 uRes;uniform float uTime,uSeed,uWarp,uFlicker,uTrails,uDetail,uZoom,uHal,uPost,uSrcAspect,uMirror;
 void main(){
  vec2 uv=gl_FragCoord.xy/uRes;
  vec2 p=uv*vec2(1.,uRes.y/uRes.x);
@@ -187,7 +227,7 @@ void main(){
  vec2 w2=vec2(fbm(p*4.+w1*3.+s),fbm(p*4.+w1*3.+9.1+s))-.5;
  vec2 jump=(vec2(h1(sf+7.),h1(sf+9.))-.5)*uFlicker*.02;
  vec2 off=(w1*.6+w2*.4)*uWarp*.13+jump;
- vec2 su=cover(uv+off);
+ vec2 su=coverUV(uv+off,uSrcAspect,uRes.x/uRes.y,uMirror);
  float r=(1.-uDetail)*.018+.0015;
  vec3 cam=texture2D(uSrc,su).rgb*.4;
  cam+=texture2D(uSrc,su+vec2(r,0)).rgb*.15;cam+=texture2D(uSrc,su-vec2(r,0)).rgb*.15;
@@ -204,59 +244,23 @@ void main(){
  vec2 c=uv-.5;float a=.006*uZoom*sin(uTime*.3+1.);
  c=mat2(cos(a),-sin(a),sin(a),cos(a))*c;c*=1.-.014*uZoom;
  vec3 prev=texture2D(uPrev,c+.5+off*.5).rgb;
- vec3 col=mix(cam,prev,uTrails*.93);
- gl_FragColor=vec4(clamp(col,0.,1.),1.);
-}`;
-const FS_COPY='precision mediump float;uniform sampler2D t;uniform vec2 r;void main(){gl_FragColor=texture2D(t,gl_FragCoord.xy/r);}';
+ gl_FragColor=vec4(clamp(mix(cam,prev,uTrails*.93),0.,1.),1.);
+}`);
+const pCopy=prog('uniform sampler2D t;uniform vec2 r;void main(){gl_FragColor=texture2D(t,gl_FragCoord.xy/r);}');
 
-function sh(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
-  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))console.error(gl.getShaderInfoLog(s));return s;}
-function prog(fs){const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,VS));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));
-  gl.bindAttribLocation(p,0,'a');gl.linkProgram(p);return p;}
-const pMain=prog(FS_MAIN),pCopy=prog(FS_COPY);
-const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
-gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
-gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
-
-function tex(){const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);return t;}
-const srcTex=tex();
-const fb=[0,1].map(()=>{const t=tex();gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,W,H,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
-  const f=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
-  gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);return{t,f};});
-gl.bindFramebuffer(gl.FRAMEBUFFER,null);
-const U={};['uSrc','uPrev','uRes','uTime','uSeed','uWarp','uFlicker','uTrails','uDetail','uZoom','uHal','uPost','uSrcAspect','uMirror'].forEach(n=>U[n]=gl.getUniformLocation(pMain,n));
-const UC={t:gl.getUniformLocation(pCopy,'t'),r:gl.getUniformLocation(pCopy,'r')};
-
-/* Spaghetti mode: 2023 text-to-video. Few real frames per second, the model morphs between them,
-   the face reshapes every keyframe, features duplicate, the mouth area smears, upscaled and oversharpened. */
-const FS_SOUP=`
-#ifdef GL_FRAGMENT_PRECISION_HIGH
-precision highp float;
-#else
-precision mediump float;
-#endif
+/* ---------- Spaghetti: imitation of 2023 clips ---------- */
+const pSoup=prog(`
 uniform sampler2D uA,uB,uPrev,uWM;uniform vec2 uRes;
-uniform float uKey,uMix,uWarp,uFlicker,uTrails,uDetail,uAspA,uAspB,uMirror;
-float h1(float n){return fract(sin(n*127.1)*43758.5453);}
-float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
-float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
- return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}
-float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<4;i++){v+=a*noise(p);p=p*2.03+17.1;a*=.5;}return v;}
-vec2 cover(vec2 uv,float asp){float A=uRes.x/uRes.y;
- if(asp>A)uv.x=(uv.x-.5)*A/asp+.5;else uv.y=(uv.y-.5)*asp/A+.5;
- if(uMirror>.5)uv.x=1.-uv.x;return uv;}
+uniform float uKey,uMix,uWarp,uFlicker,uTrails,uDetail,uAspA,uAspB,uMirror,uWmOn;
 vec3 soft(sampler2D t,vec2 uv,float r){
  return texture2D(t,uv).rgb*.4+(texture2D(t,uv+vec2(r,0)).rgb+texture2D(t,uv-vec2(r,0)).rgb+texture2D(t,uv+vec2(0,r)).rgb+texture2D(t,uv-vec2(0,r)).rgb)*.15;}
-vec3 crunch(sampler2D t,vec2 uv,float asp){uv=cover(uv,asp);float r=(1.-uDetail)*.012+.003;
+vec3 crunch(sampler2D t,vec2 uv,float asp){uv=coverUV(uv,asp,uRes.x/uRes.y,uMirror);float r=(1.-uDetail)*.012+.003;
  vec3 a=soft(t,uv,r),b=soft(t,uv,r*2.6);return a+(a-b)*.9;}
 vec2 faceWarp(vec2 uv,vec2 p,float k,float face){
  vec2 w=vec2(fbm(p*3.+k*3.1),fbm(p*3.+7.3+k*2.3))-.5;
  vec2 c=vec2(.5,.57);
  vec2 sc=vec2(1.+(h1(k+3.)-.5)*.38,1.+(h1(k+5.)-.5)*.38);
- vec2 d=(uv-c)/sc+c-uv;
- return w*uWarp*.1*(.3+face)+d*face*uWarp;}
+ return w*uWarp*.1*(.3+face)+((uv-c)/sc+c-uv)*face*uWarp;}
 void main(){
  vec2 uv=gl_FragCoord.xy/uRes;
  vec2 p=uv*vec2(1.,uRes.y/uRes.x);
@@ -282,13 +286,112 @@ void main(){
  col=mix(vec3(l),col,1.35)*vec3(1.08,1.,.87);
  col=(col-.5)*1.12+.5;
  col+=(h2(floor(gl_FragCoord.xy/8.)+kB)-.5)*.04;
- col=mix(col,vec3(1.),texture2D(uWM,uv).a*.17);
+ col=mix(col,vec3(1.),texture2D(uWM,uv).a*.17*uWmOn);
  col=mix(col,texture2D(uPrev,uv).rgb,uTrails*.6);
  gl_FragColor=vec4(clamp(col,0.,1.),1.);
-}`;
-const pSoup=prog(FS_SOUP);
-const US={};['uA','uB','uPrev','uWM','uRes','uKey','uMix','uWarp','uFlicker','uTrails','uDetail','uAspA','uAspB','uMirror'].forEach(n=>US[n]=gl.getUniformLocation(pSoup,n));
-const keyTex=[tex(),tex()],keyAsp=[W/H,W/H];let keyCount=0,lastKey=0;
+}`);
+
+/* ---------- GAN 2019: invert to a tiny frame, regenerate through upsampling layers ---------- */
+const pInv=prog(`
+uniform sampler2D uSrc;uniform vec2 uOut;uniform float uA,uAsp,uMir,uT,uWob,uJit,uKey;
+void main(){
+ vec2 uv=gl_FragCoord.xy/uOut;
+ vec2 p=uv*vec2(1.,1.333);
+ vec2 w=vec2(fbm(p*2.+uT*.35),fbm(p*2.+4.7-uT*.3))-.5;
+ uv+=w*uWob*.08;
+ vec3 s=vec3(0.);
+ for(int i=0;i<3;i++)for(int j=0;j<3;j++){vec2 o=(vec2(float(i),float(j))-1.)/3./uOut;s+=texture2D(uSrc,coverUV(uv+o,uAsp,uA,uMir)).rgb;}
+ s/=9.;
+ float l=dot(s,vec3(.299,.587,.114));
+ s=mix(vec3(l),s,.72)*vec3(1.02,1.,.9)+vec3(.02,.015,0.);
+ s+=(vec3(fbm(p*5.+uT*.08),fbm(p*5.+2.+uT*.08),fbm(p*5.+4.+uT*.08))-.5)*uWob*.16;
+ s+=(vec3(noise(p*6.+uKey*1.7),noise(p*6.+uKey*1.7+3.),noise(p*6.+uKey*1.7+6.))-.5)*uJit*.18;
+ gl_FragColor=vec4(clamp(s,0.,1.),1.);
+}`);
+const pUp=prog(`
+uniform sampler2D uLow;uniform vec2 uIn,uOut;uniform float uArt,uKey,uLvl;
+void main(){
+ vec2 px=gl_FragCoord.xy;vec2 uv=px/uOut;
+ vec3 lin=texture2D(uLow,uv).rgb;
+ vec3 nn=texture2D(uLow,(floor(px/2.)+.5)/uIn).rgb;
+ vec3 c=mix(lin,nn,.15);
+ vec2 ph=mod(floor(px),2.);
+ float chk=ph.x*.5+ph.y*.5-ph.x*ph.y*.25-.375;
+ vec3 dx=texture2D(uLow,uv+vec2(1./uIn.x,0.)).rgb-texture2D(uLow,uv-vec2(1./uIn.x,0.)).rgb;
+ vec3 dy=texture2D(uLow,uv+vec2(0.,1./uIn.y)).rgb-texture2D(uLow,uv-vec2(0.,1./uIn.y)).rgb;
+ float edge=length(dx)+length(dy);
+ c*=1.+chk*uArt*(.06+edge*1.4);
+ c+=(noise(px*.5+uKey*.3+uLvl*7.)-.5)*edge*uArt*.3;
+ gl_FragColor=vec4(clamp(c,0.,1.),1.);
+}`);
+const pGout=prog(`
+uniform sampler2D uG,uPrev;uniform vec2 uRes;uniform float uSm;
+void main(){vec2 uv=gl_FragCoord.xy/uRes;vec3 c=texture2D(uG,uv).rgb;
+ vec2 d=uv-.5;c*=1.-dot(d,d)*.5;
+ gl_FragColor=vec4(mix(c,texture2D(uPrev,uv).rgb,uSm*.7),1.);}`);
+
+/* ---------- Diffusion 2023: encode -> noise -> denoise steps -> decode ----------
+   Latents are stored as z*0.25+0.5 so values from -2 to 2 fit in 8-bit textures. */
+const pEnc=prog(`
+uniform sampler2D uSrc;uniform vec2 uL;uniform float uA,uAsp,uMir;
+void main(){vec2 c=gl_FragCoord.xy/uL;vec3 s=vec3(0.);
+ for(int i=0;i<4;i++)for(int j=0;j<4;j++){vec2 o=(vec2(float(i),float(j))-1.5)/4./uL;s+=texture2D(uSrc,coverUV(c+o,uAsp,uA,uMir)).rgb;}
+ s/=16.;gl_FragColor=vec4((s*2.-1.)*.25+.5,1.);}`);
+const pNoise=prog(`
+uniform sampler2D uX;uniform vec2 uL;uniform float uS,uKey,uDrift;
+float g(vec2 p,float s){return (h2(p+s*1.13)+h2(p+s*2.71+3.)+h2(p+s*4.07+7.)+h2(p+s*5.3+11.)-2.)*1.7;}
+void main(){vec2 c=gl_FragCoord.xy;vec3 x0=(texture2D(uX,c/uL).rgb-.5)*4.;
+ vec3 eS=vec3(g(c,1.))+vec3(g(c,2.),g(c,3.),g(c,4.))*.35;
+ vec3 eK=vec3(g(c,uKey*4.+10.))+vec3(g(c,uKey*4.+11.),g(c,uKey*4.+12.),g(c,uKey*4.+13.))*.35;
+ vec3 e=eS*sqrt(1.-uDrift)+eK*sqrt(uDrift);
+ float a=sqrt(1.-uS*uS);gl_FragColor=vec4((a*x0+uS*e)*.25+.5,1.);}`);
+const pStep=prog(`
+uniform sampler2D uZ,uPrevL;uniform vec2 uL;uniform float uS,uSp,uTemp,uFirst;
+vec3 Z(vec2 o){return (texture2D(uZ,(gl_FragCoord.xy+o)/uL).rgb-.5)*4.;}
+void main(){
+ vec3 z=Z(vec2(0.));
+ float r=.6+uS*2.4;
+ vec3 bl=z*.2
+   +(Z(vec2(r,0.))+Z(vec2(-r,0.))+Z(vec2(0.,r))+Z(vec2(0.,-r)))*.12
+   +(Z(vec2(r,r))+Z(vec2(-r,r))+Z(vec2(r,-r))+Z(vec2(-r,-r)))*.06
+   +(Z(vec2(2.*r,0.))+Z(vec2(-2.*r,0.))+Z(vec2(0.,2.*r))+Z(vec2(0.,-2.*r)))*.02;
+ float a=sqrt(max(1.-uS*uS,.001));
+ vec3 x0=bl/a;
+ vec3 pv=(texture2D(uPrevL,gl_FragCoord.xy/uL).rgb-.5)*4.;
+ x0=mix(x0,pv,uTemp*uS*(1.-uFirst));
+ float l=dot(x0,vec3(.299,.587,.114));
+ x0=mix(vec3(l),x0,1.+.15*uS);
+ x0=clamp(x0,-1.,1.);
+ vec3 eps=(z-a*x0)/max(uS,.001);
+ float ap=sqrt(max(1.-uSp*uSp,0.));
+ gl_FragColor=vec4((ap*x0+uSp*eps)*.25+.5,1.);
+}`);
+const pDec=prog(`
+uniform sampler2D uZ;uniform vec2 uRes,uL;uniform float uDetail,uKey;
+vec3 X(vec2 uv){return clamp((texture2D(uZ,uv).rgb-.5)*4.,-1.,1.)*.5+.5;}
+void main(){vec2 uv=gl_FragCoord.xy/uRes;vec2 t=1./uL;
+ vec3 c=X(uv);
+ vec3 b=(X(uv+vec2(t.x,0.))+X(uv-vec2(t.x,0.))+X(uv+vec2(0.,t.y))+X(uv-vec2(0.,t.y)))*.25;
+ vec3 col=c+(c-b)*(.6+uDetail*1.2);
+ float gm=length(c-b);
+ col+=(h2(floor(gl_FragCoord.xy/2.)+uKey)-.5)*gm*uDetail*1.5;
+ col+=(h2(floor(gl_FragCoord.xy)+uKey*.37)-.5)*.02;
+ gl_FragColor=vec4(clamp(col,0.,1.),1.);}`);
+const pShow=prog(`
+uniform sampler2D uA,uB,uWM;uniform vec2 uRes;uniform float uMix,uWmOn;
+void main(){vec2 uv=gl_FragCoord.xy/uRes;
+ vec3 c=mix(texture2D(uA,uv).rgb,texture2D(uB,uv).rgb,smoothstep(0.,1.,uMix));
+ gl_FragColor=vec4(mix(c,vec3(1.),texture2D(uWM,uv).a*.17*uWmOn),1.);}`);
+
+const srcTex=tex();
+const fb=[target(W,H),target(W,H)];
+const keyTex=[tex(),tex()],keyAsp=[W/H,W/H];
+const LW=45,LH=60;
+const latEnc=target(LW,LH),latP=[target(LW,LH),target(LW,LH)],latPrev=target(LW,LH),dec=[target(W,H),target(W,H)];
+const g0=target(48,64),g1=target(96,128),g2=target(192,256);
+let keyCount=0,lastKey=0,dKey=0,lastD=0,dHasPrev=0,gKey=0,lastG=0;
+function resetModes(){keyCount=0;dKey=0;dHasPrev=0;gKey=0;}
+
 const wmTex=tex();
 (function(){const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
   x.translate(W/2,H/2);x.rotate(-0.35);x.fillStyle='rgba(255,255,255,0.9)';x.font='600 20px system-ui,-apple-system,sans-serif';x.textAlign='center';
@@ -296,7 +399,7 @@ const wmTex=tex();
   gl.bindTexture(gl.TEXTURE_2D,wmTex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
   gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);})();
 
-/* demo feed: a simple animated scene with a face, so the warping has something to chew on */
+/* demo feed: a simple animated scene with a face, so the effects have something to chew on */
 const demo=document.createElement('canvas');demo.width=360;demo.height=480;const dc=demo.getContext('2d');
 function drawDemo(t){
   const g=dc.createLinearGradient(0,0,0,480);g.addColorStop(0,'#6FA8DC');g.addColorStop(1,'#F6C9A0');
@@ -360,10 +463,14 @@ PRESETS.forEach(pr=>{const b=document.createElement('button');b.type='button';b.
   if(pr.yr)b.querySelector('.yr').textContent=pr.yr;
   b.onclick=()=>applyPreset(pr);pre.appendChild(b);});
 const keys=['warp','flicker','trails','detail'];
+let wmOn=store('meltcam-wm')==='1';$('wm').checked=wmOn;
+$('wm').onchange=e=>{wmOn=e.target.checked;store('meltcam-wm',wmOn?'1':'0');};
 function saveSettings(){store('meltcam-settings',JSON.stringify({id:P.id,warp:P.warp,flicker:P.flicker,trails:P.trails,detail:P.detail}));}
-function syncUI(){keys.forEach(k=>{$(k).value=P[k];$(k+'O').textContent=P[k];});
-  pre.querySelectorAll('.preset').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.id===P.id)));}
-function applyPreset(pr){P=Object.assign({},pr);keyCount=0;syncUI();saveSettings();}
+function syncUI(){const labels=P.labels||DEF_LABELS;
+  keys.forEach((k,i)=>{$(k).value=P[k];$(k+'O').textContent=P[k];$(k+'L').textContent=labels[i];});
+  pre.querySelectorAll('.preset').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.id===P.id)));
+  $('howNote').textContent=P.how||EFFECT_HOW;$('resOut').textContent=P.res||'360×480';}
+function applyPreset(pr){P=Object.assign({},pr);resetModes();syncUI();saveSettings();}
 keys.forEach(k=>{$(k).addEventListener('input',e=>{P[k]=+e.target.value;$(k+'O').textContent=P[k];});$(k).addEventListener('change',saveSettings);});
 try{const s=JSON.parse(store('meltcam-settings')||'null');const base=s&&PRESETS.find(x=>x.id===s.id);
   if(base){P=Object.assign({},base);keys.forEach(k=>{if(typeof s[k]==='number')P[k]=Math.max(0,Math.min(100,s[k]));});}}catch(e){}
@@ -372,48 +479,61 @@ syncUI();
 /* render loop */
 let frame=0,cur=0,t0=performance.now(),last=0;
 function h(n){const x=Math.sin(n*127.1)*43758.5453;return x-Math.floor(x);}
+function upload(tx,live,t){gl.bindTexture(gl.TEXTURE_2D,tx);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+  if(live)gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,video);
+  else{drawDemo(t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,demo);}
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);}
+function genDiffusion(live,t,asp,mir){
+  upload(srcTex,live,t);
+  run(pEnc,latEnc,{uSrc:srcTex},{uL:[LW,LH],uA:W/H,uAsp:asp,uMir:mir});
+  const s0=.1+.8*P.warp/100,N=6;
+  run(pNoise,latP[0],{uX:latEnc.t},{uL:[LW,LH],uS:s0,uKey:dKey%997,uDrift:P.flicker/100});
+  for(let i=0;i<N;i++)run(pStep,latP[(i+1)%2],{uZ:latP[i%2].t,uPrevL:latPrev.t},
+    {uL:[LW,LH],uS:s0*(1-i/N),uSp:s0*(1-(i+1)/N),uTemp:P.trails/100,uFirst:dHasPrev?0:1});
+  const fin=latP[N%2];
+  run(pDec,dec[dKey%2],{uZ:fin.t},{uRes:[W,H],uL:[LW,LH],uDetail:P.detail/100,uKey:dKey%997});
+  run(pCopy,latPrev,{t:fin.t},{r:[LW,LH]});
+  dHasPrev=1;dKey++;
+}
 function loop(now){
   requestAnimationFrame(loop);
   if(now-last<30)return;last=now;
   const t=(now-t0)/1000;
-  const live=mode!=='demo'&&video.readyState>=2&&video.videoWidth;
-  const srcAspect=live?video.videoWidth/video.videoHeight:W/H;
-  const mirror=(live&&mode==='cam'&&facing==='user')?1:0;
-  function upload(tx){gl.bindTexture(gl.TEXTURE_2D,tx);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
-    if(live)gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,video);
-    else{drawDemo(t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,demo);}
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);}
+  const live=!!(mode!=='demo'&&video.readyState>=2&&video.videoWidth);
+  const asp=live?video.videoWidth/video.videoHeight:W/H;
+  const mir=(live&&mode==='cam'&&facing==='user')?1:0;
   const nxt=1-cur;
   let seed;
-  if(P.soup){
+  if(P.diff){
+    if(dKey<2||now-lastD>=125){genDiffusion(live,t,asp,mir);lastD=now;}
+    const iB=(dKey-1)%2,iA=dKey>1?1-iB:iB;seed=dKey;
+    run(pShow,fb[nxt],{uA:dec[iA].t,uB:dec[iB].t,uWM:wmTex},{uRes:[W,H],uMix:Math.min(1,(now-lastD)/125),uWmOn:wmOn?1:0});
+  }else if(P.gan){
+    if(gKey===0||now-lastG>=83){
+      upload(srcTex,live,t);
+      run(pInv,g0,{uSrc:srcTex},{uOut:[48,64],uA:W/H,uAsp:asp,uMir:mir,uT:t%3600,uWob:P.warp/100,uJit:P.flicker/100,uKey:gKey%997});
+      run(pUp,g1,{uLow:g0.t},{uIn:[48,64],uOut:[96,128],uArt:P.detail/100,uKey:gKey%997,uLvl:1});
+      run(pUp,g2,{uLow:g1.t},{uIn:[96,128],uOut:[192,256],uArt:P.detail/100,uKey:gKey%997,uLvl:2});
+      gKey++;lastG=now;
+    }
+    seed=gKey;
+    run(pGout,fb[nxt],{uG:g2.t,uPrev:fb[cur].t},{uRes:[W,H],uSm:P.trails/100});
+  }else if(P.soup){
     const keyMs=Math.round(260-(P.flicker/100)*190);
-    if(keyCount<2||now-lastKey>=keyMs){const i=keyCount%2;upload(keyTex[i]);keyAsp[i]=srcAspect;keyCount++;lastKey=now;}
+    if(keyCount<2||now-lastKey>=keyMs){const i=keyCount%2;upload(keyTex[i],live,t);keyAsp[i]=asp;keyCount++;lastKey=now;}
     const iB=(keyCount-1)%2,iA=1-iB;seed=keyCount;
-    gl.bindFramebuffer(gl.FRAMEBUFFER,fb[nxt].f);gl.viewport(0,0,W,H);gl.useProgram(pSoup);
-    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,keyTex[iA]);gl.uniform1i(US.uA,0);
-    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,keyTex[iB]);gl.uniform1i(US.uB,1);
-    gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,fb[cur].t);gl.uniform1i(US.uPrev,2);
-    gl.activeTexture(gl.TEXTURE3);gl.bindTexture(gl.TEXTURE_2D,wmTex);gl.uniform1i(US.uWM,3);
-    gl.uniform2f(US.uRes,W,H);gl.uniform1f(US.uKey,keyCount%5000);gl.uniform1f(US.uMix,Math.min(1,(now-lastKey)/keyMs));
-    gl.uniform1f(US.uWarp,P.warp/100);gl.uniform1f(US.uFlicker,P.flicker/100);gl.uniform1f(US.uTrails,P.trails/100);gl.uniform1f(US.uDetail,P.detail/100);
-    gl.uniform1f(US.uAspA,keyAsp[iA]);gl.uniform1f(US.uAspB,keyAsp[iB]);gl.uniform1f(US.uMirror,mirror);
-    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    run(pSoup,fb[nxt],{uA:keyTex[iA],uB:keyTex[iB],uPrev:fb[cur].t,uWM:wmTex},
+      {uRes:[W,H],uKey:keyCount%5000,uMix:Math.min(1,(now-lastKey)/keyMs),uWarp:P.warp/100,uFlicker:P.flicker/100,uTrails:P.trails/100,
+       uDetail:P.detail/100,uAspA:keyAsp[iA],uAspB:keyAsp[iB],uMirror:mir,uWmOn:wmOn?1:0});
   }else{
-  upload(srcTex);
-  const interval=Math.max(1,Math.round(24-(P.flicker/100)*23));
-  seed=(frame%240000)/interval;
-  gl.bindFramebuffer(gl.FRAMEBUFFER,fb[nxt].f);gl.viewport(0,0,W,H);gl.useProgram(pMain);
-  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.uniform1i(U.uSrc,0);
-  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,fb[cur].t);gl.uniform1i(U.uPrev,1);
-  gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uTime,t%3600);gl.uniform1f(U.uSeed,seed);
-  gl.uniform1f(U.uWarp,P.warp/100);gl.uniform1f(U.uFlicker,P.flicker/100);gl.uniform1f(U.uTrails,P.trails/100);
-  gl.uniform1f(U.uDetail,P.detail/100);gl.uniform1f(U.uZoom,P.zoom);gl.uniform1f(U.uHal,P.hal);gl.uniform1f(U.uPost,P.post);
-  gl.uniform1f(U.uSrcAspect,srcAspect);gl.uniform1f(U.uMirror,mirror);
-  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    upload(srcTex,live,t);
+    const interval=Math.max(1,Math.round(24-(P.flicker/100)*23));
+    seed=(frame%240000)/interval;
+    run(pMain,fb[nxt],{uSrc:srcTex,uPrev:fb[cur].t},
+      {uRes:[W,H],uTime:t%3600,uSeed:seed,uWarp:P.warp/100,uFlicker:P.flicker/100,uTrails:P.trails/100,uDetail:P.detail/100,
+       uZoom:P.zoom,uHal:P.hal,uPost:P.post,uSrcAspect:asp,uMirror:mir});
   }
-  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,W,H);gl.useProgram(pCopy);
-  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,fb[nxt].t);gl.uniform1i(UC.t,0);gl.uniform2f(UC.r,W,H);
-  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  run(pCopy,null,{t:fb[nxt].t},{r:[W,H]});
   cur=nxt;frame++;
   if(frame%3===0){$('frameOut').textContent='frame '+String(frame%10000).padStart(4,'0');
     $('seedOut').textContent='seed '+String(Math.floor(h(Math.floor(seed))*9999)).padStart(4,'0');}
