@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0F0E13">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Melt Cam">
+<meta name="description" content="Live video filter that recreates the melting, flickering look of 2022-2023 AI video.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<script>window.MELT_STANDALONE=true</script>
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;-webkit-text-size-adjust:100%;overscroll-behavior-y:none}img{max-width:100%}</style>
+<title>Melt Cam 2022</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+/* Layout: camera viewfinder on top (left on wide screens), control deck below it. Single dark look, like a camera app. */
+:root{
+  --ink:#0F0E13; --panel:#18161E; --line:#2B2834; --text:#EEEAF3; --muted:#958FA3;
+  --accent:#F2A65A; --accent-ink:#2A1606; --violet:#A79BFF; --danger:#FF7A7A;
+  --display:"Bricolage Grotesque",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --body:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{background:var(--ink);color:var(--text)}
+body{font-family:var(--body);font-size:15px;line-height:1.5;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 28px}
+.wrap{max-width:1080px;margin:0 auto;display:grid;gap:20px}
+@media (min-width:860px){.wrap{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);align-items:start}}
+header{grid-column:1/-1;display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font-family:var(--display);font-size:clamp(26px,6vw,38px);line-height:1;margin:0;letter-spacing:-.02em;text-wrap:balance}
+h1 span{color:var(--accent)}
+.tag{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.stage{position:relative;width:min(100%,52vh);max-width:100%;aspect-ratio:3/4;margin-inline:auto;border-radius:18px;overflow:hidden;background:#000;border:1px solid var(--line)}
+.stage canvas{width:100%;height:100%;display:block}
+.chip{position:absolute;top:12px;left:12px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;background:rgba(15,14,19,.72);border:1px solid var(--line);color:var(--text);padding:4px 9px;border-radius:999px;display:flex;gap:6px;align-items:center;font-variant-numeric:tabular-nums}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.chip.live .dot{background:var(--danger)}
+.chip.rec{left:auto;right:12px;color:var(--danger)}
+.chip.rec .dot{background:var(--danger)}
+.readout{position:absolute;left:0;right:0;bottom:0;padding:22px 12px 10px;font-family:var(--mono);font-size:11px;color:#D8D2E4;background:linear-gradient(transparent,rgba(0,0,0,.6));display:flex;justify-content:space-between;gap:8px;font-variant-numeric:tabular-nums}
+.deck{display:grid;gap:18px;min-width:0}
+.label{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+button{font:inherit;font-weight:500;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;min-height:44px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+button:hover{border-color:#47425A}
+button:focus-visible,input:focus-visible{outline:2px solid var(--violet);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.stop{background:var(--danger);color:#2A0B0B;border-color:var(--danger)}
+button[disabled]{opacity:.45;cursor:default}
+.presets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media (min-width:520px){.presets{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.preset{flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:10px 12px}
+.preset b{font-family:var(--display);font-size:17px;font-weight:700}
+.preset small{font-size:12px;color:var(--muted);font-weight:400;line-height:1.3}
+.preset[aria-pressed="true"]{border-color:var(--accent);background:#241B12}
+.preset[aria-pressed="true"] b{color:var(--accent)}
+.sliders{display:grid;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+.sl{display:grid;grid-template-columns:72px minmax(0,1fr) 36px;align-items:center;gap:10px}
+.sl label{font-size:14px}
+.sl output{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent);min-height:28px}
+.note{font-size:13px;color:var(--muted);margin:8px 0 0;max-width:62ch}
+.note.warn{color:var(--accent)}
+.result{display:flex;gap:12px;align-items:center;margin-top:10px;padding:10px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
+.result img,.result video{width:60px;height:80px;object-fit:cover;border-radius:8px;background:#000;flex:none}
+.result .row{flex:1;min-width:0}
+#file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Melt Cam <span>2022</span></h1>
+    <span class="tag">img2img · per-frame · no temporal memory</span>
+  </header>
+
+  <div class="stage">
+    <canvas id="gl" width="360" height="480" aria-label="Filtered video preview"></canvas>
+    <div class="chip" id="srcChip"><span class="dot"></span><span id="srcName">Demo feed</span></div>
+    <div class="chip rec" id="recChip" hidden><span class="dot"></span><span id="recTime">Rec 0:00</span></div>
+    <div class="readout"><span id="frameOut">frame 0000</span><span id="seedOut">seed 0000</span><span>360×480</span></div>
+  </div>
+
+  <div class="deck">
+    <section>
+      <p class="label">Source</p>
+      <div class="row">
+        <button id="camBtn" type="button">Live camera</button>
+        <button id="flipBtn" type="button" hidden>Flip camera</button>
+        <button class="primary" id="fileBtn" type="button">Film or pick a video</button>
+        <button id="demoBtn" type="button" hidden>Demo feed</button>
+      </div>
+      <input type="file" id="file" accept="video/*">
+      <p class="note" id="srcNote"></p>
+      <p class="note" id="installNote" hidden>To install: tap the Share button, then Add to Home Screen.</p>
+    </section>
+
+    <section>
+      <p class="label">Look</p>
+      <div class="presets" id="presets"></div>
+    </section>
+
+    <section id="capSec" hidden>
+      <p class="label">Capture</p>
+      <div class="row">
+        <button id="snapBtn" type="button">Snapshot</button>
+        <button id="recBtn" type="button">Record</button>
+      </div>
+      <div class="result" id="result" hidden>
+        <img id="resImg" alt="Snapshot preview" hidden>
+        <video id="resVid" muted playsinline loop hidden></video>
+        <div class="row">
+          <button class="primary" id="saveBtn" type="button">Save</button>
+          <button id="discardBtn" type="button">Discard</button>
+        </div>
+      </div>
+      <p class="note" id="saveNote"></p>
+    </section>
+
+    <section class="sliders" aria-label="Fine tuning">
+      <div class="sl"><label for="warp">Warp</label><input type="range" id="warp" min="0" max="100"><output for="warp" id="warpO"></output></div>
+      <div class="sl"><label for="flicker">Flicker</label><input type="range" id="flicker" min="0" max="100"><output for="flicker" id="flickerO"></output></div>
+      <div class="sl"><label for="trails">Trails</label><input type="range" id="trails" min="0" max="100"><output for="trails" id="trailsO"></output></div>
+      <div class="sl"><label for="detail">Detail</label><input type="range" id="detail" min="0" max="100"><output for="detail" id="detailO"></output></div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const STANDALONE=!!window.MELT_STANDALONE;
+const canvas=$('gl');
+const W=canvas.width,H=canvas.height;
+function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v);}catch(e){return null;}}
+function note(msg,warn){const n=$('srcNote');n.textContent=msg;n.className='note'+(warn?' warn':'');}
+
+const gl=canvas.getContext('webgl',{preserveDrawingBuffer:true,antialias:false});
+if(!gl){note('This browser has WebGL turned off, so the filter cannot run.',true);return;}
+
+if(STANDALONE){$('camBtn').classList.add('primary');$('fileBtn').classList.remove('primary');
+  note('Showing a demo feed. Tap Live camera to filter your iPhone camera.');
+  if(navigator.standalone===false&&/iPhone|iPad|iPod/.test(navigator.userAgent))$('installNote').hidden=false;
+}else{
+  note('Showing a demo feed. Camera access is limited inside Claude: use Film or pick a video to record a clip, or try Live camera.');
+}
+
+const PRESETS=[
+  {id:'melt',name:'Melt',sub:'Zooming dream trails',warp:60,flicker:30,trails:82,detail:55,zoom:1,hal:.35,post:.5},
+  {id:'flicker',name:'Flicker',sub:'New style every frame',warp:28,flicker:92,trails:8,detail:72,zoom:0,hal:.2,post:.8},
+  {id:'mush',name:'Mush',sub:'Blurry early text-to-video',warp:48,flicker:38,trails:55,detail:12,zoom:.3,hal:.1,post:.2},
+  {id:'dream',name:'Dream',sub:'Hallucinated patterns',warp:80,flicker:50,trails:62,detail:60,zoom:.6,hal:1,post:.6}
+];
+let P=Object.assign({},PRESETS[0]);
+
+const VS='attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}';
+const FS_MAIN=`
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+uniform sampler2D uSrc,uPrev;uniform vec2 uRes;uniform float uTime,uSeed,uWarp,uFlicker,uTrails,uDetail,uZoom,uHal,uPost,uSrcAspect,uMirror;
+float h1(float n){return fract(sin(n*127.1)*43758.5453);}
+float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+ return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}
+float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<4;i++){v+=a*noise(p);p=p*2.03+17.1;a*=.5;}return v;}
+vec2 cover(vec2 uv){float A=uRes.x/uRes.y;
+ if(uSrcAspect>A)uv.x=(uv.x-.5)*A/uSrcAspect+.5;else uv.y=(uv.y-.5)*uSrcAspect/A+.5;
+ if(uMirror>.5)uv.x=1.-uv.x;return uv;}
+void main(){
+ vec2 uv=gl_FragCoord.xy/uRes;
+ vec2 p=uv*vec2(1.,uRes.y/uRes.x);
+ float s=uSeed,sf=floor(uSeed);
+ vec2 w1=vec2(fbm(p*2.5+s*1.7+uTime*.15),fbm(p*2.5+5.2-s*1.3-uTime*.12))-.5;
+ vec2 w2=vec2(fbm(p*4.+w1*3.+s),fbm(p*4.+w1*3.+9.1+s))-.5;
+ vec2 jump=(vec2(h1(sf+7.),h1(sf+9.))-.5)*uFlicker*.02;
+ vec2 off=(w1*.6+w2*.4)*uWarp*.13+jump;
+ vec2 su=cover(uv+off);
+ float r=(1.-uDetail)*.018+.0015;
+ vec3 cam=texture2D(uSrc,su).rgb*.4;
+ cam+=texture2D(uSrc,su+vec2(r,0)).rgb*.15;cam+=texture2D(uSrc,su-vec2(r,0)).rgb*.15;
+ cam+=texture2D(uSrc,su+vec2(0,r)).rgb*.15;cam+=texture2D(uSrc,su-vec2(0,r)).rgb*.15;
+ vec3 jit=vec3(h1(sf),h1(sf+1.3),h1(sf+2.7))-.5;
+ cam=cam*(1.+jit*uFlicker*.55)+(h1(sf+4.)-.5)*uFlicker*.14;
+ float l=dot(cam,vec3(.299,.587,.114));
+ float rid=1.-abs(fbm(p*9.+w2*4.+s*.5)*2.-1.);rid=pow(rid,6.);
+ vec3 pal=.5+.5*cos(6.2832*(vec3(0.,.33,.67)+sf*.13+l*1.5));
+ cam=mix(cam,pal,clamp(rid*uHal*.7,0.,1.));
+ l=dot(cam,vec3(.299,.587,.114));
+ cam=mix(vec3(l),cam,1.+.7*uPost);
+ cam=mix(cam,floor(cam*6.+.5)/6.,uPost*.45);
+ vec2 c=uv-.5;float a=.006*uZoom*sin(uTime*.3+1.);
+ c=mat2(cos(a),-sin(a),sin(a),cos(a))*c;c*=1.-.014*uZoom;
+ vec3 prev=texture2D(uPrev,c+.5+off*.5).rgb;
+ vec3 col=mix(cam,prev,uTrails*.93);
+ gl_FragColor=vec4(clamp(col,0.,1.),1.);
+}`;
+const FS_COPY='precision mediump float;uniform sampler2D t;uniform vec2 r;void main(){gl_FragColor=texture2D(t,gl_FragCoord.xy/r);}';
+
+function sh(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))console.error(gl.getShaderInfoLog(s));return s;}
+function prog(fs){const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,VS));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));
+  gl.bindAttribLocation(p,0,'a');gl.linkProgram(p);return p;}
+const pMain=prog(FS_MAIN),pCopy=prog(FS_COPY);
+const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+
+function tex(){const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);return t;}
+const srcTex=tex();
+const fb=[0,1].map(()=>{const t=tex();gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,W,H,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  const f=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
+  gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);return{t,f};});
+gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+const U={};['uSrc','uPrev','uRes','uTime','uSeed','uWarp','uFlicker','uTrails','uDetail','uZoom','uHal','uPost','uSrcAspect','uMirror'].forEach(n=>U[n]=gl.getUniformLocation(pMain,n));
+const UC={t:gl.getUniformLocation(pCopy,'t'),r:gl.getUniformLocation(pCopy,'r')};
+
+/* demo feed: a simple animated scene with a face, so the warping has something to chew on */
+const demo=document.createElement('canvas');demo.width=360;demo.height=480;const dc=demo.getContext('2d');
+function drawDemo(t){
+  const g=dc.createLinearGradient(0,0,0,480);g.addColorStop(0,'#6FA8DC');g.addColorStop(1,'#F6C9A0');
+  dc.fillStyle=g;dc.fillRect(0,0,360,480);
+  dc.fillStyle='#FFE08A';dc.beginPath();dc.arc(280,90+Math.sin(t*.4)*8,38,0,7);dc.fill();
+  dc.fillStyle='#4E8A5A';dc.beginPath();dc.moveTo(0,360);for(let x=0;x<=360;x+=20)dc.lineTo(x,340+Math.sin(x*.02+t*.2)*20);dc.lineTo(360,480);dc.lineTo(0,480);dc.fill();
+  const hx=180+Math.sin(t*.9)*40,hy=250+Math.sin(t*1.7)*10;
+  dc.fillStyle='#3D5A99';dc.beginPath();dc.ellipse(hx,hy+170,95,110,0,0,7);dc.fill();
+  dc.fillStyle='#E8B896';dc.beginPath();dc.ellipse(hx,hy,62,74,Math.sin(t*.9)*.12,0,7);dc.fill();
+  dc.fillStyle='#4A3426';dc.beginPath();dc.ellipse(hx,hy-46,66,36,0,Math.PI,0);dc.fill();
+  const blink=(t%4)<.15?1:9;dc.fillStyle='#222';
+  dc.beginPath();dc.ellipse(hx-22,hy-4,7,blink,0,0,7);dc.ellipse(hx+22,hy-4,7,blink,0,0,7);dc.fill();
+  dc.strokeStyle='#8A4B2F';dc.lineWidth=4;dc.beginPath();dc.arc(hx,hy+22,18+Math.sin(t*2)*4,.15*Math.PI,.85*Math.PI);dc.stroke();
+}
+
+/* sources */
+const video=document.createElement('video');video.muted=true;video.playsInline=true;video.setAttribute('playsinline','');video.setAttribute('muted','');video.loop=true;
+let mode='demo',stream=null,facing=store('meltcam-facing')||'user',clipURL=null;
+function setChip(name,live){$('srcName').textContent=name;$('srcChip').classList.toggle('live',!!live);}
+function stopStream(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}}
+function dropClip(){if(clipURL){URL.revokeObjectURL(clipURL);clipURL=null;}}
+function useDemo(){stopStream();dropClip();video.pause();video.removeAttribute('src');video.srcObject=null;mode='demo';
+  setChip('Demo feed');$('flipBtn').hidden=true;$('demoBtn').hidden=true;note('Showing the demo feed.');store('meltcam-cam','0');}
+async function startCam(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){camFail();return;}
+  try{
+    stopStream();
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:720},height:{ideal:960}},audio:false});
+    dropClip();video.removeAttribute('src');video.srcObject=stream;await video.play();
+    mode='cam';setChip(facing==='user'?'Live · front':'Live · back',true);
+    $('flipBtn').hidden=false;$('demoBtn').hidden=false;note('Live camera running. Everything is processed on your phone.');
+    store('meltcam-cam','1');
+  }catch(e){camFail(e);}
+}
+function camFail(e){
+  if(STANDALONE){
+    if(e&&e.name==='NotAllowedError')note('Camera access was denied. On iPhone, open Settings, then Safari, then Camera, and choose Allow or Ask. Then tap Live camera again.',true);
+    else if(!window.isSecureContext)note('The camera only works when the app is opened from an https:// address.',true);
+    else note('The camera could not start. Close other apps that use the camera and try again.',true);
+  }else note('Live camera access is blocked in this viewer. Use Film or pick a video to record with your camera, and the filter will run on that clip as it plays.',true);
+}
+$('camBtn').onclick=startCam;
+$('flipBtn').onclick=()=>{facing=facing==='user'?'environment':'user';store('meltcam-facing',facing);startCam();};
+$('demoBtn').onclick=useDemo;
+$('fileBtn').onclick=()=>$('file').click();
+$('file').onchange=e=>{const f=e.target.files&&e.target.files[0];if(!f)return;
+  stopStream();dropClip();video.srcObject=null;clipURL=URL.createObjectURL(f);video.src=clipURL;
+  video.play().then(()=>{mode='clip';setChip('Clip');$('flipBtn').hidden=true;$('demoBtn').hidden=false;note('Filtering your clip live as it plays on loop.');store('meltcam-cam','0');})
+   .catch(()=>note('That video could not be played here. Try a clip recorded with the iPhone camera.',true));
+  e.target.value='';};
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible')return;
+  if(mode==='cam'){const live=stream&&stream.getVideoTracks().some(t=>t.readyState==='live');if(!live)startCam();else video.play().catch(()=>{});}
+  else if(mode==='clip')video.play().catch(()=>{});
+});
+
+/* presets + sliders (remembered on this device) */
+const pre=$('presets');
+PRESETS.forEach(pr=>{const b=document.createElement('button');b.type='button';b.className='preset';b.dataset.id=pr.id;
+  b.innerHTML='<b></b><small></small>';b.querySelector('b').textContent=pr.name;b.querySelector('small').textContent=pr.sub;
+  b.onclick=()=>applyPreset(pr);pre.appendChild(b);});
+const keys=['warp','flicker','trails','detail'];
+function saveSettings(){store('meltcam-settings',JSON.stringify({id:P.id,warp:P.warp,flicker:P.flicker,trails:P.trails,detail:P.detail}));}
+function syncUI(){keys.forEach(k=>{$(k).value=P[k];$(k+'O').textContent=P[k];});
+  pre.querySelectorAll('.preset').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.id===P.id)));}
+function applyPreset(pr){P=Object.assign({},pr);syncUI();saveSettings();}
+keys.forEach(k=>{$(k).addEventListener('input',e=>{P[k]=+e.target.value;$(k+'O').textContent=P[k];});$(k).addEventListener('change',saveSettings);});
+try{const s=JSON.parse(store('meltcam-settings')||'null');const base=s&&PRESETS.find(x=>x.id===s.id);
+  if(base){P=Object.assign({},base);keys.forEach(k=>{if(typeof s[k]==='number')P[k]=Math.max(0,Math.min(100,s[k]));});}}catch(e){}
+syncUI();
+
+/* render loop */
+let frame=0,cur=0,t0=performance.now(),last=0;
+function h(n){const x=Math.sin(n*127.1)*43758.5453;return x-Math.floor(x);}
+function loop(now){
+  requestAnimationFrame(loop);
+  if(now-last<30)return;last=now;
+  const t=(now-t0)/1000;
+  let srcAspect=W/H,mirror=0;
+  gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+  if(mode!=='demo'&&video.readyState>=2&&video.videoWidth){
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,video);
+    srcAspect=video.videoWidth/video.videoHeight;mirror=(mode==='cam'&&facing==='user')?1:0;
+  }else{drawDemo(t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,demo);}
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+
+  const interval=Math.max(1,Math.round(24-(P.flicker/100)*23));
+  const seed=(frame%240000)/interval;
+  const nxt=1-cur;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fb[nxt].f);gl.viewport(0,0,W,H);gl.useProgram(pMain);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.uniform1i(U.uSrc,0);
+  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,fb[cur].t);gl.uniform1i(U.uPrev,1);
+  gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uTime,t%3600);gl.uniform1f(U.uSeed,seed);
+  gl.uniform1f(U.uWarp,P.warp/100);gl.uniform1f(U.uFlicker,P.flicker/100);gl.uniform1f(U.uTrails,P.trails/100);
+  gl.uniform1f(U.uDetail,P.detail/100);gl.uniform1f(U.uZoom,P.zoom);gl.uniform1f(U.uHal,P.hal);gl.uniform1f(U.uPost,P.post);
+  gl.uniform1f(U.uSrcAspect,srcAspect);gl.uniform1f(U.uMirror,mirror);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,W,H);gl.useProgram(pCopy);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,fb[nxt].t);gl.uniform1i(UC.t,0);gl.uniform2f(UC.r,W,H);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  cur=nxt;frame++;
+  if(frame%3===0){$('frameOut').textContent='frame '+String(frame%10000).padStart(4,'0');
+    $('seedOut').textContent='seed '+String(Math.floor(h(Math.floor(seed))*9999)).padStart(4,'0');}
+}
+requestAnimationFrame(loop);
+
+/* capture: make the file first, then save it on a tap (share sheet on iPhone, Claude download in the viewer) */
+let dl=null,pending=null,rec=null,recTimer=null;
+const sn=$('saveNote');
+function showResult(blob,name,isVideo){
+  if(pending&&pending.url)URL.revokeObjectURL(pending.url);
+  const url=URL.createObjectURL(blob);pending={blob,name,url};
+  $('resImg').hidden=isVideo;$('resVid').hidden=!isVideo;
+  if(isVideo){$('resVid').src=url;$('resVid').play().catch(()=>{});$('resImg').removeAttribute('src');}
+  else{$('resImg').src=url;$('resVid').removeAttribute('src');}
+  $('result').hidden=false;sn.textContent=isVideo?'Video ready. Tap Save to keep it.':'Snapshot ready. Tap Save to keep it.';
+}
+function clearResult(){if(pending&&pending.url)URL.revokeObjectURL(pending.url);pending=null;$('result').hidden=true;
+  $('resVid').pause();$('resVid').removeAttribute('src');$('resImg').removeAttribute('src');}
+async function deliver(){
+  if(!pending)return;const {blob,name}=pending;
+  if(dl){try{await dl.save({filename:name,data:blob});sn.textContent='Saved '+name+'.';clearResult();}
+    catch(e){sn.textContent=e&&e.code==='declined'?'Save cancelled.':'Saving is not available here right now.';}return;}
+  const type=blob.type||(name.endsWith('.png')?'image/png':'video/mp4');
+  let file=null;try{file=new File([blob],name,{type});}catch(e){}
+  if(file&&navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file]});sn.textContent='Done. Choose Save Image or Save Video in the share sheet to put it in Photos.';clearResult();}
+    catch(e){sn.textContent=e&&e.name==='AbortError'?'Save cancelled.':'The share sheet could not open. Try again.';}
+    return;
+  }
+  const a=document.createElement('a');a.href=pending.url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  sn.textContent='Downloaded '+name+'.';
+}
+$('saveBtn').onclick=deliver;
+$('discardBtn').onclick=()=>{clearResult();sn.textContent='';};
+$('snapBtn').onclick=()=>canvas.toBlob(b=>{if(b)showResult(b,'melt-cam-'+Date.now()+'.png',false);},'image/png');
+
+const canRec=typeof MediaRecorder!=='undefined'&&!!canvas.captureStream;
+if(!canRec)$('recBtn').hidden=true;
+function stopRec(){if(rec&&rec.state!=='inactive')rec.stop();}
+$('recBtn').onclick=()=>{
+  if(rec&&rec.state==='recording'){stopRec();return;}
+  const types=['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm'];
+  const type=types.find(x=>MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(x))||'';
+  const ext=type.indexOf('mp4')>-1?'mp4':'webm';
+  try{rec=new MediaRecorder(canvas.captureStream(30),type?{mimeType:type}:undefined);}catch(e){sn.textContent='Recording is not supported in this browser.';return;}
+  const chunks=[];const started=Date.now();
+  rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data);};
+  rec.onstop=()=>{clearInterval(recTimer);$('recChip').hidden=true;const b=$('recBtn');b.textContent='Record';b.classList.remove('stop');
+    if(chunks.length)showResult(new Blob(chunks,{type:type.split(';')[0]||'video/webm'}),'melt-cam-'+Date.now()+'.'+ext,true);
+    else sn.textContent='Nothing was recorded. Try again.';};
+  clearResult();rec.start(500);
+  $('recChip').hidden=false;$('recTime').textContent='Rec 0:00';
+  const b=$('recBtn');b.textContent='Stop';b.classList.add('stop');sn.textContent='Recording. Tap Stop to finish (max 30 seconds).';
+  recTimer=setInterval(()=>{const s=Math.floor((Date.now()-started)/1000);$('recTime').textContent='Rec 0:'+String(s).padStart(2,'0');if(s>=30)stopRec();},250);
+};
+
+if(STANDALONE){$('capSec').hidden=false;}
+else(async()=>{try{dl=window.claude&&window.claude.use?await window.claude.use('downloads'):null;}catch(e){}if(dl)$('capSec').hidden=false;})();
+
+if(STANDALONE&&store('meltcam-cam')==='1')startCam();
+if(STANDALONE&&'serviceWorker' in navigator&&window.isSecureContext)navigator.serviceWorker.register('sw.js').catch(()=>{});
+})();
+</script>
+
+</body>
+</html>
