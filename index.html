@@ -60,6 +60,8 @@ button[disabled]{opacity:.45;cursor:default}
 .preset small{font-size:12px;color:var(--muted);font-weight:400;line-height:1.3}
 .preset[aria-pressed="true"]{border-color:var(--accent);background:#241B12}
 .preset[aria-pressed="true"] b{color:var(--accent)}
+.preset.feature{grid-column:1/-1;flex-direction:row;align-items:baseline;flex-wrap:wrap;column-gap:10px}
+.preset .yr{font-family:var(--mono);font-size:11px;color:var(--violet);margin-left:auto}
 .sliders{display:grid;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
 .sl{display:grid;grid-template-columns:72px minmax(0,1fr) 36px;align-items:center;gap:10px}
 .sl label{font-size:14px}
@@ -153,6 +155,7 @@ if(STANDALONE){$('camBtn').classList.add('primary');$('fileBtn').classList.remov
 }
 
 const PRESETS=[
+  {id:'spaghetti',name:'Spaghetti',sub:'Choppy morphing face, extra features, noodle smear',yr:'2023 text-to-video',warp:70,flicker:55,trails:18,detail:35,zoom:0,hal:0,post:.5,soup:true},
   {id:'melt',name:'Melt',sub:'Zooming dream trails',warp:60,flicker:30,trails:82,detail:55,zoom:1,hal:.35,post:.5},
   {id:'flicker',name:'Flicker',sub:'New style every frame',warp:28,flicker:92,trails:8,detail:72,zoom:0,hal:.2,post:.8},
   {id:'mush',name:'Mush',sub:'Blurry early text-to-video',warp:48,flicker:38,trails:55,detail:12,zoom:.3,hal:.1,post:.2},
@@ -226,6 +229,73 @@ gl.bindFramebuffer(gl.FRAMEBUFFER,null);
 const U={};['uSrc','uPrev','uRes','uTime','uSeed','uWarp','uFlicker','uTrails','uDetail','uZoom','uHal','uPost','uSrcAspect','uMirror'].forEach(n=>U[n]=gl.getUniformLocation(pMain,n));
 const UC={t:gl.getUniformLocation(pCopy,'t'),r:gl.getUniformLocation(pCopy,'r')};
 
+/* Spaghetti mode: 2023 text-to-video. Few real frames per second, the model morphs between them,
+   the face reshapes every keyframe, features duplicate, the mouth area smears, upscaled and oversharpened. */
+const FS_SOUP=`
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+uniform sampler2D uA,uB,uPrev,uWM;uniform vec2 uRes;
+uniform float uKey,uMix,uWarp,uFlicker,uTrails,uDetail,uAspA,uAspB,uMirror;
+float h1(float n){return fract(sin(n*127.1)*43758.5453);}
+float h2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+ return mix(mix(h2(i),h2(i+vec2(1,0)),f.x),mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x),f.y);}
+float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<4;i++){v+=a*noise(p);p=p*2.03+17.1;a*=.5;}return v;}
+vec2 cover(vec2 uv,float asp){float A=uRes.x/uRes.y;
+ if(asp>A)uv.x=(uv.x-.5)*A/asp+.5;else uv.y=(uv.y-.5)*asp/A+.5;
+ if(uMirror>.5)uv.x=1.-uv.x;return uv;}
+vec3 soft(sampler2D t,vec2 uv,float r){
+ return texture2D(t,uv).rgb*.4+(texture2D(t,uv+vec2(r,0)).rgb+texture2D(t,uv-vec2(r,0)).rgb+texture2D(t,uv+vec2(0,r)).rgb+texture2D(t,uv-vec2(0,r)).rgb)*.15;}
+vec3 crunch(sampler2D t,vec2 uv,float asp){uv=cover(uv,asp);float r=(1.-uDetail)*.012+.003;
+ vec3 a=soft(t,uv,r),b=soft(t,uv,r*2.6);return a+(a-b)*.9;}
+vec2 faceWarp(vec2 uv,vec2 p,float k,float face){
+ vec2 w=vec2(fbm(p*3.+k*3.1),fbm(p*3.+7.3+k*2.3))-.5;
+ vec2 c=vec2(.5,.57);
+ vec2 sc=vec2(1.+(h1(k+3.)-.5)*.38,1.+(h1(k+5.)-.5)*.38);
+ vec2 d=(uv-c)/sc+c-uv;
+ return w*uWarp*.1*(.3+face)+d*face*uWarp;}
+void main(){
+ vec2 uv=gl_FragCoord.xy/uRes;
+ vec2 p=uv*vec2(1.,uRes.y/uRes.x);
+ float kB=uKey,kA=uKey-1.;
+ float m=smoothstep(0.,1.,uMix);
+ float face=1.-smoothstep(.15,1.,length((uv-vec2(.5,.57))/vec2(.33,.31)));
+ vec2 flow=(vec2(fbm(p*2.+kB),fbm(p*2.+kB+4.))-.5)*.09*uWarp*(.4+face);
+ vec2 ua=uv+faceWarp(uv,p,kA,face)+flow*m;
+ vec2 ub=uv+faceWarp(uv,p,kB,face)-flow*(1.-m);
+ vec3 col=mix(crunch(uA,ua,uAspA),crunch(uB,ub,uAspB),m);
+ vec2 dup=(vec2(h1(kB+11.),h1(kB+13.))-.5)*vec2(.22,.2);
+ float dm=face*smoothstep(.52,.72,fbm(p*3.+kB*1.7));
+ col=mix(col,crunch(uB,ub+dup,uAspB),dm*.6*uWarp);
+ float reg=smoothstep(.56,.42,uv.y)*smoothstep(.05,.3,uv.y)*(1.-smoothstep(.12,.38,abs(uv.x-.5)));
+ float streak=smoothstep(.45,.75,noise(vec2(p.x*26.,p.y*1.3+kB*.7)))*reg;
+ vec3 sm=vec3(0.);
+ for(int j=1;j<=5;j++){sm+=crunch(uB,ub+vec2(0.,float(j)*.024),uAspB);}
+ sm=sm/5.*vec3(1.22,.92,.62);
+ col=mix(col,sm,streak*.85);
+ vec3 jit=vec3(h1(kB),h1(kB+1.3),h1(kB+2.7))-.5;
+ col*=1.+jit*uFlicker*.28;
+ float l=dot(col,vec3(.299,.587,.114));
+ col=mix(vec3(l),col,1.35)*vec3(1.08,1.,.87);
+ col=(col-.5)*1.12+.5;
+ col+=(h2(floor(gl_FragCoord.xy/8.)+kB)-.5)*.04;
+ col=mix(col,vec3(1.),texture2D(uWM,uv).a*.17);
+ col=mix(col,texture2D(uPrev,uv).rgb,uTrails*.6);
+ gl_FragColor=vec4(clamp(col,0.,1.),1.);
+}`;
+const pSoup=prog(FS_SOUP);
+const US={};['uA','uB','uPrev','uWM','uRes','uKey','uMix','uWarp','uFlicker','uTrails','uDetail','uAspA','uAspB','uMirror'].forEach(n=>US[n]=gl.getUniformLocation(pSoup,n));
+const keyTex=[tex(),tex()],keyAsp=[W/H,W/H];let keyCount=0,lastKey=0;
+const wmTex=tex();
+(function(){const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
+  x.translate(W/2,H/2);x.rotate(-0.35);x.fillStyle='rgba(255,255,255,0.9)';x.font='600 20px system-ui,-apple-system,sans-serif';x.textAlign='center';
+  for(let y=-360;y<=360;y+=78)for(let i=-2;i<=2;i++)x.fillText('stock footage · preview',i*250+(y/78%2?125:0),y);
+  gl.bindTexture(gl.TEXTURE_2D,wmTex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);})();
+
 /* demo feed: a simple animated scene with a face, so the warping has something to chew on */
 const demo=document.createElement('canvas');demo.width=360;demo.height=480;const dc=demo.getContext('2d');
 function drawDemo(t){
@@ -285,14 +355,15 @@ document.addEventListener('visibilitychange',()=>{
 
 /* presets + sliders (remembered on this device) */
 const pre=$('presets');
-PRESETS.forEach(pr=>{const b=document.createElement('button');b.type='button';b.className='preset';b.dataset.id=pr.id;
-  b.innerHTML='<b></b><small></small>';b.querySelector('b').textContent=pr.name;b.querySelector('small').textContent=pr.sub;
+PRESETS.forEach(pr=>{const b=document.createElement('button');b.type='button';b.className='preset'+(pr.yr?' feature':'');b.dataset.id=pr.id;
+  b.innerHTML='<b></b><small></small>'+(pr.yr?'<span class="yr"></span>':'');b.querySelector('b').textContent=pr.name;b.querySelector('small').textContent=pr.sub;
+  if(pr.yr)b.querySelector('.yr').textContent=pr.yr;
   b.onclick=()=>applyPreset(pr);pre.appendChild(b);});
 const keys=['warp','flicker','trails','detail'];
 function saveSettings(){store('meltcam-settings',JSON.stringify({id:P.id,warp:P.warp,flicker:P.flicker,trails:P.trails,detail:P.detail}));}
 function syncUI(){keys.forEach(k=>{$(k).value=P[k];$(k+'O').textContent=P[k];});
   pre.querySelectorAll('.preset').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.id===P.id)));}
-function applyPreset(pr){P=Object.assign({},pr);syncUI();saveSettings();}
+function applyPreset(pr){P=Object.assign({},pr);keyCount=0;syncUI();saveSettings();}
 keys.forEach(k=>{$(k).addEventListener('input',e=>{P[k]=+e.target.value;$(k+'O').textContent=P[k];});$(k).addEventListener('change',saveSettings);});
 try{const s=JSON.parse(store('meltcam-settings')||'null');const base=s&&PRESETS.find(x=>x.id===s.id);
   if(base){P=Object.assign({},base);keys.forEach(k=>{if(typeof s[k]==='number')P[k]=Math.max(0,Math.min(100,s[k]));});}}catch(e){}
@@ -305,17 +376,32 @@ function loop(now){
   requestAnimationFrame(loop);
   if(now-last<30)return;last=now;
   const t=(now-t0)/1000;
-  let srcAspect=W/H,mirror=0;
-  gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
-  if(mode!=='demo'&&video.readyState>=2&&video.videoWidth){
-    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,video);
-    srcAspect=video.videoWidth/video.videoHeight;mirror=(mode==='cam'&&facing==='user')?1:0;
-  }else{drawDemo(t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,demo);}
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
-
-  const interval=Math.max(1,Math.round(24-(P.flicker/100)*23));
-  const seed=(frame%240000)/interval;
+  const live=mode!=='demo'&&video.readyState>=2&&video.videoWidth;
+  const srcAspect=live?video.videoWidth/video.videoHeight:W/H;
+  const mirror=(live&&mode==='cam'&&facing==='user')?1:0;
+  function upload(tx){gl.bindTexture(gl.TEXTURE_2D,tx);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+    if(live)gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,video);
+    else{drawDemo(t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,demo);}
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);}
   const nxt=1-cur;
+  let seed;
+  if(P.soup){
+    const keyMs=Math.round(260-(P.flicker/100)*190);
+    if(keyCount<2||now-lastKey>=keyMs){const i=keyCount%2;upload(keyTex[i]);keyAsp[i]=srcAspect;keyCount++;lastKey=now;}
+    const iB=(keyCount-1)%2,iA=1-iB;seed=keyCount;
+    gl.bindFramebuffer(gl.FRAMEBUFFER,fb[nxt].f);gl.viewport(0,0,W,H);gl.useProgram(pSoup);
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,keyTex[iA]);gl.uniform1i(US.uA,0);
+    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,keyTex[iB]);gl.uniform1i(US.uB,1);
+    gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,fb[cur].t);gl.uniform1i(US.uPrev,2);
+    gl.activeTexture(gl.TEXTURE3);gl.bindTexture(gl.TEXTURE_2D,wmTex);gl.uniform1i(US.uWM,3);
+    gl.uniform2f(US.uRes,W,H);gl.uniform1f(US.uKey,keyCount%5000);gl.uniform1f(US.uMix,Math.min(1,(now-lastKey)/keyMs));
+    gl.uniform1f(US.uWarp,P.warp/100);gl.uniform1f(US.uFlicker,P.flicker/100);gl.uniform1f(US.uTrails,P.trails/100);gl.uniform1f(US.uDetail,P.detail/100);
+    gl.uniform1f(US.uAspA,keyAsp[iA]);gl.uniform1f(US.uAspB,keyAsp[iB]);gl.uniform1f(US.uMirror,mirror);
+    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  }else{
+  upload(srcTex);
+  const interval=Math.max(1,Math.round(24-(P.flicker/100)*23));
+  seed=(frame%240000)/interval;
   gl.bindFramebuffer(gl.FRAMEBUFFER,fb[nxt].f);gl.viewport(0,0,W,H);gl.useProgram(pMain);
   gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,srcTex);gl.uniform1i(U.uSrc,0);
   gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,fb[cur].t);gl.uniform1i(U.uPrev,1);
@@ -324,6 +410,7 @@ function loop(now){
   gl.uniform1f(U.uDetail,P.detail/100);gl.uniform1f(U.uZoom,P.zoom);gl.uniform1f(U.uHal,P.hal);gl.uniform1f(U.uPost,P.post);
   gl.uniform1f(U.uSrcAspect,srcAspect);gl.uniform1f(U.uMirror,mirror);
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  }
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,W,H);gl.useProgram(pCopy);
   gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,fb[nxt].t);gl.uniform1i(UC.t,0);gl.uniform2f(UC.r,W,H);
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
